@@ -39,19 +39,49 @@ if [[ ! "$response" =~ ^[Yy]$ ]]; then
     exit 0
 fi
 
-# Install required packages
+# Install required packages (browser is optional - we'll detect default)
 echo -e "${GREEN}Installing required packages...${NC}"
 sudo apt-get update
 sudo apt-get install -y \
-    chromium-browser \
     unclutter \
     xdotool \
     x11-xserver-utils \
-    matchbox-window-manager
+    matchbox-window-manager \
+    curl
+
+# Detect default browser
+echo -e "${GREEN}Detecting default browser...${NC}"
+DEFAULT_BROWSER=""
+if command -v chromium-browser &> /dev/null; then
+    DEFAULT_BROWSER="chromium-browser"
+    BROWSER_TYPE="chromium"
+elif command -v chromium &> /dev/null; then
+    DEFAULT_BROWSER="chromium"
+    BROWSER_TYPE="chromium"
+elif command -v firefox &> /dev/null; then
+    DEFAULT_BROWSER="firefox"
+    BROWSER_TYPE="firefox"
+elif command -v xdg-open &> /dev/null; then
+    # Try to get default browser from xdg
+    DEFAULT_BROWSER=$(xdg-settings get default-web-browser 2>/dev/null || echo "")
+    if [ -n "$DEFAULT_BROWSER" ]; then
+        BROWSER_TYPE="xdg"
+    else
+        DEFAULT_BROWSER="xdg-open"
+        BROWSER_TYPE="xdg"
+    fi
+else
+    echo -e "${YELLOW}No browser detected. Installing Chromium as fallback...${NC}"
+    sudo apt-get install -y chromium-browser || sudo apt-get install -y chromium
+    DEFAULT_BROWSER="chromium-browser"
+    BROWSER_TYPE="chromium"
+fi
+
+echo -e "${GREEN}Using browser: $DEFAULT_BROWSER${NC}"
 
 # Create kiosk startup script
 echo -e "${GREEN}Creating kiosk startup script...${NC}"
-sudo tee /usr/bin/opsdash-kiosk.sh > /dev/null <<'EOF'
+sudo tee /usr/bin/opsdash-kiosk.sh > /dev/null <<EOF
 #!/bin/bash
 # Hide cursor
 unclutter -idle 0.5 -root &
@@ -68,16 +98,39 @@ while ! curl -s http://localhost:8501 > /dev/null 2>&1; do
     sleep 5
 done
 
-# Launch Chromium in kiosk mode
-chromium-browser \
-    --noerrdialogs \
-    --disable-infobars \
-    --kiosk \
-    --incognito \
-    --disable-restore-session-state \
-    --disable-session-crashed-bubble \
-    --disable-features=TranslateUI \
-    --app=http://localhost:8501
+# Detect and launch browser
+if command -v chromium-browser &> /dev/null; then
+    # Chromium/Chrome with kiosk mode
+    chromium-browser \\
+        --noerrdialogs \\
+        --disable-infobars \\
+        --kiosk \\
+        --incognito \\
+        --disable-restore-session-state \\
+        --disable-session-crashed-bubble \\
+        --disable-features=TranslateUI \\
+        --app=http://localhost:8501
+elif command -v chromium &> /dev/null; then
+    # Chromium (newer versions)
+    chromium \\
+        --noerrdialogs \\
+        --disable-infobars \\
+        --kiosk \\
+        --incognito \\
+        --disable-restore-session-state \\
+        --disable-session-crashed-bubble \\
+        --disable-features=TranslateUI \\
+        --app=http://localhost:8501
+elif command -v firefox &> /dev/null; then
+    # Firefox with fullscreen
+    firefox -kiosk http://localhost:8501
+else
+    # Fallback: use xdg-open (default browser) in fullscreen
+    xdg-open http://localhost:8501
+    # Try to make it fullscreen with xdotool
+    sleep 3
+    xdotool key F11
+fi
 EOF
 
 sudo chmod +x /usr/bin/opsdash-kiosk.sh
@@ -90,7 +143,7 @@ cat > ~/.config/autostart/opsdash-kiosk.desktop <<EOF
 Type=Application
 Name=OpsDash Kiosk
 Exec=/usr/bin/opsdash-kiosk.sh
-Icon=chromium-browser
+Icon=web-browser
 Comment=OpsDash Mainframe Dashboard
 X-GNOME-Autostart-enabled=true
 EOF
@@ -108,7 +161,7 @@ if [ "$choice" = "2" ]; then
 Type=Application
 Name=OpsDash Kiosk
 Exec=/usr/bin/opsdash-kiosk.sh
-Icon=chromium-browser
+Icon=web-browser
 Comment=OpsDash Mainframe Dashboard
 X-GNOME-Autostart-enabled=true
 EOF
@@ -128,8 +181,18 @@ echo -e "${BLUE}To disable kiosk mode:${NC}"
 echo "  Remove: ${GREEN}~/.config/autostart/opsdash-kiosk.desktop${NC}"
 echo "  Or: ${GREEN}sudo rm /etc/xdg/autostart/opsdash-kiosk.desktop${NC}"
 echo ""
+echo -e "${BLUE}Browser detected: $DEFAULT_BROWSER${NC}"
+echo ""
 echo -e "${BLUE}Keyboard shortcuts in kiosk mode:${NC}"
-echo "  ${GREEN}Alt+F4${NC} - Exit full-screen"
-echo "  ${GREEN}Ctrl+Shift+Q${NC} - Quit browser"
+if [ "$BROWSER_TYPE" = "chromium" ]; then
+    echo "  ${GREEN}Alt+F4${NC} - Exit full-screen"
+    echo "  ${GREEN}Ctrl+Shift+Q${NC} - Quit browser"
+elif [ "$BROWSER_TYPE" = "firefox" ]; then
+    echo "  ${GREEN}F11${NC} - Toggle full-screen"
+    echo "  ${GREEN}Alt+F4${NC} - Close browser"
+else
+    echo "  ${GREEN}F11${NC} - Toggle full-screen"
+    echo "  ${GREEN}Alt+F4${NC} - Close browser"
+fi
 echo ""
 

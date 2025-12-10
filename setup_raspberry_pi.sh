@@ -48,7 +48,6 @@ sudo apt-get install -y \
     build-essential \
     libffi-dev \
     libssl-dev \
-    chromium-browser \
     unclutter \
     xdotool \
     x11-xserver-utils
