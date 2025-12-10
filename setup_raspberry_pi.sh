@@ -155,22 +155,80 @@ echo -e "${YELLOW}Zowe CLI Configuration${NC}"
 echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 echo "You need to configure Zowe CLI to connect to your mainframe."
-echo "You'll be prompted for:"
-echo "  - Host: 204.90.115.200 (or your z/OSMF host)"
-echo "  - Port: 10443 (or your z/OSMF port)"
+echo ""
+echo -e "${BLUE}Default connection details:${NC}"
+echo "  - Host: 204.90.115.200"
+echo "  - Port: 10443 (IMPORTANT: Not 443!)"
 echo "  - User: Your z/OS user ID"
 echo "  - Password: Your z/OS password"
 echo ""
-echo -e "${YELLOW}Press Enter to start Zowe configuration, or Ctrl+C to skip and configure later...${NC}"
+echo -e "${YELLOW}Press Enter to configure Zowe CLI, or Ctrl+C to skip and configure later...${NC}"
 read -r
 
-# Test Zowe connection
-if zowe zosmf check status; then
-    echo -e "${GREEN}✓ Zowe CLI is already configured and working!${NC}"
+# Check if profile already exists
+if zowe profiles list zosmf-profiles --ow-json 2>/dev/null | grep -q "default"; then
+    echo -e "${YELLOW}Default profile exists. Update it? (y/n)${NC}"
+    read -r update_response
+    if [[ "$update_response" =~ ^[Yy]$ ]]; then
+        echo -e "${YELLOW}Enter your z/OS user ID:${NC}"
+        read -r ZOWE_USER
+        echo -e "${YELLOW}Enter your z/OS password (hidden):${NC}"
+        read -rs ZOWE_PASS
+        echo ""
+        
+        # Update profile with correct port
+        zowe profiles update zosmf-profile default \
+            --host 204.90.115.200 \
+            --port 10443 \
+            --user "$ZOWE_USER" \
+            --password "$ZOWE_PASS" \
+            --reject-unauthorized false || {
+            echo -e "${RED}Failed to update profile. Trying to create new one...${NC}"
+            zowe profiles delete zosmf-profile default -y 2>/dev/null || true
+            zowe profiles create zosmf-profile default \
+                --host 204.90.115.200 \
+                --port 10443 \
+                --user "$ZOWE_USER" \
+                --password "$ZOWE_PASS" \
+                --reject-unauthorized false
+        }
+    fi
 else
-    echo -e "${YELLOW}Configuring Zowe CLI profile...${NC}"
-    echo -e "${YELLOW}Follow the prompts to enter your mainframe connection details${NC}"
-    zowe zosmf check status || echo -e "${YELLOW}Zowe configuration will need to be completed manually${NC}"
+    # Create new profile
+    echo -e "${YELLOW}Enter your z/OS user ID:${NC}"
+    read -r ZOWE_USER
+    echo -e "${YELLOW}Enter your z/OS password (hidden):${NC}"
+    read -rs ZOWE_PASS
+    echo ""
+    
+    echo -e "${GREEN}Creating Zowe CLI profile with port 10443...${NC}"
+    zowe profiles create zosmf-profile default \
+        --host 204.90.115.200 \
+        --port 10443 \
+        --user "$ZOWE_USER" \
+        --password "$ZOWE_PASS" \
+        --reject-unauthorized false || {
+        echo -e "${YELLOW}Profile creation had issues. You may need to configure manually.${NC}"
+    }
+fi
+
+# Test Zowe connection
+echo ""
+echo -e "${GREEN}Testing Zowe CLI connection...${NC}"
+if zowe zosmf check status --host 204.90.115.200 --port 10443 --user "$ZOWE_USER" --password "$ZOWE_PASS" --reject-unauthorized false 2>/dev/null; then
+    echo -e "${GREEN}✓ Zowe CLI connection successful!${NC}"
+elif zowe zosmf check status; then
+    echo -e "${GREEN}✓ Zowe CLI is configured and working!${NC}"
+else
+    echo -e "${RED}✗ Zowe CLI connection failed${NC}"
+    echo -e "${YELLOW}Troubleshooting:${NC}"
+    echo "  1. Verify host and port: 204.90.115.200:10443"
+    echo "  2. Check your credentials"
+    echo "  3. Ensure network connectivity: ping 204.90.115.200"
+    echo "  4. Run manually: zowe zosmf check status --host 204.90.115.200 --port 10443 --user YOUR_USER --password YOUR_PASS --reject-unauthorized false"
+    echo ""
+    echo -e "${YELLOW}You can configure Zowe CLI later using:${NC}"
+    echo "  ${GREEN}zowe profiles create zosmf-profile default --host 204.90.115.200 --port 10443 --user YOUR_USER --password YOUR_PASS --reject-unauthorized false${NC}"
 fi
 
 # Create systemd service for auto-start
