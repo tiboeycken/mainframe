@@ -86,51 +86,15 @@ if ! command -v zowe &> /dev/null; then
     exit 1
 fi
 
-# Clone or update OpsDash repository
+# Setup OpsDash directory
 echo -e "${GREEN}[5/8] Setting up OpsDash directory...${NC}"
-
-# Ask for GitHub repository URL
-echo ""
-echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${YELLOW}GitHub Repository Setup${NC}"
-echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo ""
-echo "Enter your GitHub repository URL (e.g., https://github.com/username/opsdash.git)"
-echo "Or press Enter to use a default/test setup"
-read -r GITHUB_REPO
-
-if [ -z "$GITHUB_REPO" ]; then
-    echo -e "${YELLOW}No repository URL provided.${NC}"
-    echo -e "${YELLOW}You can manually clone your repo later or set it up manually.${NC}"
-    mkdir -p "$OPSDASH_DIR"
-    cd "$OPSDASH_DIR"
-    
-    if [ ! -f "opsdash_web.py" ]; then
-        echo -e "${RED}Error: opsdash_web.py not found${NC}"
-        echo -e "${YELLOW}Please clone your repository or copy files manually${NC}"
-        exit 1
-    fi
-else
-    # Clone repository
-    if [ -d "$OPSDASH_DIR/.git" ]; then
-        echo -e "${YELLOW}Repository already exists. Updating...${NC}"
-        cd "$OPSDASH_DIR"
-        git pull
-    else
-        echo -e "${GREEN}Cloning repository from GitHub...${NC}"
-        git clone "$GITHUB_REPO" "$OPSDASH_DIR" || {
-            echo -e "${RED}Error: Failed to clone repository${NC}"
-            echo -e "${YELLOW}Please check the URL and try again${NC}"
-            exit 1
-        }
-        cd "$OPSDASH_DIR"
-    fi
-fi
+mkdir -p "$OPSDASH_DIR"
+cd "$OPSDASH_DIR"
 
 # Check for required files
 if [ ! -f "opsdash_web.py" ]; then
     echo -e "${RED}Error: opsdash_web.py not found in $OPSDASH_DIR${NC}"
-    echo -e "${YELLOW}Please ensure the repository contains opsdash_web.py${NC}"
+    echo -e "${YELLOW}Please copy opsdash_web.py to $OPSDASH_DIR${NC}"
     exit 1
 fi
 
@@ -234,10 +198,17 @@ EOF
 # Store credentials securely using Zowe CLI with keyring
 echo -e "${YELLOW}Storing credentials in Zowe profile (using keyring)...${NC}"
 export NODE_TLS_REJECT_UNAUTHORIZED=0
-echo "$ZOWE_PASS" | zowe config set profiles.zosmf.zosmf.user "$ZOWE_USER" --secure --global-config true
-echo "$ZOWE_PASS" | zowe config set profiles.zosmf.zosmf.password "$ZOWE_PASS" --secure --global-config true
-echo "$ZOWE_PASS" | zowe config set profiles.base.global_base.user "$ZOWE_USER" --secure --global-config true
-echo "$ZOWE_PASS" | zowe config set profiles.base.global_base.password "$ZOWE_PASS" --secure --global-config true
+
+# Set user (keyring will automatically store securely)
+zowe config set profiles.zosmf.zosmf.user "$ZOWE_USER" --global-config true
+
+# Set password (keyring will automatically store securely)
+# Note: When keyring is available, Zowe CLI automatically uses it for secure fields
+zowe config set profiles.zosmf.zosmf.password "$ZOWE_PASS" --global-config true
+
+# Set base profile credentials
+zowe config set profiles.base.global_base.user "$ZOWE_USER" --global-config true
+zowe config set profiles.base.global_base.password "$ZOWE_PASS" --global-config true
 
 echo -e "${GREEN}✓ Zowe profile created and credentials stored${NC}"
 echo ""
