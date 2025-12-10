@@ -1,0 +1,59 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv
+pip-log.txt
+pip-delete-this-directory.txt
+Lib/
+Scripts/
+Include/ 
+pyvenv.cfg
+.pytest_cache/
+
+# Streamlit
+.streamlit/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Sensitive files
+*.txt
+!requirements.txt
+IBM*.txt
+*PW*.txt
+*password*.txt
+*credential*.txt
+.env
+.env.local
+
+# Generated files
+generated.jcl
+test.jcl
+*.log
+zapp.yaml
+
+# Temporary files
+*.tmp
+*.temp
+
+# Node modules (if any)
+node_modules/
+
+# Zowe CLI profiles (may contain credentials)
+.zowe/
+

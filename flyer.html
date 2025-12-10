@@ -1,0 +1,167 @@
+<!doctype html>
+<html>
+
+<head>
+    <meta charset="utf-8" />
+    <title>OpsDash — Mainframe Dashboard</title>
+    <style>
+        body {
+            font-family: Inter, Arial, sans-serif;
+            margin: 30px;
+            max-width: 900px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #111;
+            min-height: 100vh;
+        }
+
+        .container {
+            background: white;
+            padding: 40px;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+        }
+
+        header {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        h1 {
+            font-size: 48px;
+            margin: 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .tag {
+            color: #666;
+            font-size: 18px;
+            margin-top: 5px;
+        }
+
+        .cols {
+            display: flex;
+            gap: 20px;
+            margin-top: 30px;
+        }
+
+        .card {
+            flex: 1;
+            padding: 24px;
+            border-radius: 12px;
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
+            background: #f8f9fa;
+            border-left: 4px solid #667eea;
+        }
+
+        .card h3 {
+            margin-top: 0;
+            color: #667eea;
+            font-size: 22px;
+        }
+
+        ul {
+            margin: 12px 0 0 20px;
+            line-height: 1.8;
+        }
+
+        li {
+            margin-bottom: 8px;
+        }
+
+        .features {
+            background: #f0f4ff;
+            padding: 20px;
+            border-radius: 10px;
+            margin-top: 20px;
+        }
+
+        .features h3 {
+            color: #667eea;
+            margin-top: 0;
+        }
+
+        .tech-stack {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .tech-badge {
+            background: #667eea;
+            color: white;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        footer {
+            margin-top: 30px;
+            color: #666;
+            font-size: 14px;
+            text-align: center;
+            padding-top: 20px;
+            border-top: 1px solid #eee;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <div>
+                <h1>🖥️ OpsDash</h1>
+                <div class="tag">Modern Web Dashboard for z/OS System Monitoring & COBOL Development</div>
+            </div>
+        </header>
+
+        <div class="cols">
+            <div class="card">
+                <h3>What it is</h3>
+                <p>A comprehensive dashboard system with <strong>two components</strong>: (1) A USS-based terminal
+                    dashboard that displays system info, JES jobs, and datasets at login, and (2) A modern web dashboard
+                    running locally that connects via Zowe CLI. The web version includes an integrated COBOL editor with
+                    compile/run functionality, real-time job tracking, and spool file viewing.</p>
+            </div>
+            <div class="card">
+                <h3>Why it's AWESOME</h3>
+                <ul>
+                    <li><strong>Dual-mode operation:</strong> Terminal dashboard on mainframe + web dashboard locally
+                    </li>
+                    <li><strong>Integrated COBOL IDE:</strong> Edit, upload, compile & run COBOL directly from browser
+                    </li>
+                    <li><strong>Real-time monitoring:</strong> System info, JES jobs, datasets with live updates</li>
+                    <li><strong>Production-ready:</strong> Clean UI, error handling, session persistence</li>
+                    <li><strong>Modern stack:</strong> Python, Streamlit, Zowe CLI, JCL integration</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="features">
+            <h3>Key Features</h3>
+            <div class="tech-stack">
+                <span class="tech-badge">System Summary</span>
+                <span class="tech-badge">JES Job Monitoring</span>
+                <span class="tech-badge">Dataset Browser</span>
+                <span class="tech-badge">COBOL Editor</span>
+                <span class="tech-badge">JCL Generation</span>
+                <span class="tech-badge">Job Status Tracking</span>
+                <span class="tech-badge">Spool File Viewer</span>
+                <span class="tech-badge">Auto-refresh</span>
+            </div>
+        </div>
+
+        <footer>
+            Built with Python, Streamlit, Zowe CLI, JCL, COBOL, and USS.
+            Source code and instructions available in submission package.
+        </footer>
+    </div>
+</body>
+
+</html>
