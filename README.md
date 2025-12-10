@@ -72,21 +72,6 @@ A modern, dual-mode dashboard system for z/OS mainframe monitoring and COBOL dev
    python3 opsdash.py
    ```
 
-### Raspberry Pi Setup
-
-For a dedicated always-on dashboard:
-
-```bash
-# Clone this repository
-git clone https://github.com/tiboeycken/opsdash.git
-cd opsdash
-
-# Run automated setup
-chmod +x setup_raspberry_pi.sh
-./setup_raspberry_pi.sh
-```
-
-See [README_RASPBERRY_PI.md](README_RASPBERRY_PI.md) for detailed instructions.
 
 ## 📋 Requirements
 
@@ -103,11 +88,7 @@ opsdash/
 ├── opsdash.py              # USS terminal dashboard
 ├── opsdash_web.py          # Web dashboard (Streamlit)
 ├── requirements.txt        # Python dependencies
-├── setup_raspberry_pi.sh   # Raspberry Pi setup script
-├── setup_kiosk_mode.sh     # Kiosk mode configuration
 ├── README.md               # This file
-├── README_WEB.md           # Web dashboard documentation
-├── README_RASPBERRY_PI.md  # Raspberry Pi setup guide
 └── .gitignore             # Git ignore rules
 ```
 
@@ -123,8 +104,6 @@ opsdash/
 
 ## 📖 Documentation
 
-- [Web Dashboard Setup](README_WEB.md) - Detailed setup for local web dashboard
-- [Raspberry Pi Setup](README_RASPBERRY_PI.md) - Complete Pi setup guide
 - [Grand Challenge Submission](GRAND_CHALLENGE_SUBMISSION.txt) - Submission details
 
 ## 🔧 Configuration
