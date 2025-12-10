@@ -54,12 +54,35 @@ else
     echo -e "${YELLOW}⚠ Config init had issues (may already exist)${NC}"
 fi
 echo ""
+# Check multiple possible locations
+CONFIG_FOUND=false
 if [ -f ~/.zowe/zowe.config.json ]; then
     echo -e "${GREEN}✓ Config file exists: ~/.zowe/zowe.config.json${NC}"
+    CONFIG_FILE=~/.zowe/zowe.config.json
+    CONFIG_FOUND=true
+elif [ -f ~/.zowe/zosmf/profiles/zosmf_meta.yaml ]; then
+    echo -e "${GREEN}✓ Config file exists: ~/.zowe/zosmf/profiles/zosmf_meta.yaml${NC}"
+    CONFIG_FILE=~/.zowe/zosmf/profiles/zosmf_meta.yaml
+    CONFIG_FOUND=true
+elif [ -f ~/.zowe/zowe.config.yaml ]; then
+    echo -e "${GREEN}✓ Config file exists: ~/.zowe/zowe.config.yaml${NC}"
+    CONFIG_FILE=~/.zowe/zowe.config.yaml
+    CONFIG_FOUND=true
+fi
+
+if [ "$CONFIG_FOUND" = true ]; then
     echo -e "${YELLOW}Current config:${NC}"
-    cat ~/.zowe/zowe.config.json | python3 -m json.tool 2>/dev/null || cat ~/.zowe/zowe.config.json
+    cat "$CONFIG_FILE"
+    echo ""
+    echo -e "${YELLOW}Also checking for JSON config:${NC}"
+    find ~/.zowe -name "*.json" -type f 2>/dev/null | head -5
+    echo ""
+    echo -e "${YELLOW}Also checking for YAML config:${NC}"
+    find ~/.zowe -name "*.yaml" -type f 2>/dev/null | head -5
 else
-    echo -e "${RED}✗ Config file not found!${NC}"
+    echo -e "${RED}✗ Config file not found in expected locations!${NC}"
+    echo -e "${YELLOW}Searching for any config files...${NC}"
+    find ~/.zowe -type f 2>/dev/null | head -10
 fi
 echo ""
 read -p "Press Enter to continue..."
@@ -79,16 +102,21 @@ echo "  Password: [hidden]"
 echo ""
 read -p "Press Enter to continue..."
 
-# Step 5: Set host
+# Step 5: Try with global-config true instead
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${GREEN}STEP 5: Set Host${NC}"
+echo -e "${GREEN}STEP 5: Set Host (trying --global-config true)${NC}"
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo "Running: zowe config set profiles.zosmf.default.host 204.90.115.200 --global-config false"
-zowe config set profiles.zosmf.default.host 204.90.115.200 --global-config false
+echo "Running: zowe config set profiles.zosmf.default.host 204.90.115.200 --global-config true"
+zowe config set profiles.zosmf.default.host 204.90.115.200 --global-config true
 if [ $? -eq 0 ]; then
     echo -e "${GREEN}✓ Host set${NC}"
-    VERIFY=$(zowe config get profiles.zosmf.default.host --global-config false 2>/dev/null)
+    VERIFY=$(zowe config get profiles.zosmf.default.host --global-config true 2>/dev/null)
     echo "  Verified: $VERIFY"
+    if [ -z "$VERIFY" ]; then
+        echo -e "${YELLOW}⚠ Verification returned empty, trying without --global-config flag...${NC}"
+        VERIFY=$(zowe config get profiles.zosmf.default.host 2>/dev/null)
+        echo "  Verified (no flag): $VERIFY"
+    fi
 else
     echo -e "${RED}✗ Failed to set host${NC}"
 fi
@@ -99,14 +127,26 @@ read -p "Press Enter to continue..."
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${GREEN}STEP 6: Set Port (IMPORTANT: 10443, not 443)${NC}"
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo "Running: zowe config set profiles.zosmf.default.port 10443 --global-config false"
-zowe config set profiles.zosmf.default.port 10443 --global-config false
+echo "Running: zowe config set profiles.zosmf.default.port 10443 --global-config true"
+zowe config set profiles.zosmf.default.port 10443 --global-config true
 if [ $? -eq 0 ]; then
-    echo -e "${GREEN}✓ Port set${NC}"
-    VERIFY=$(zowe config get profiles.zosmf.default.port --global-config false 2>/dev/null)
-    echo "  Verified: $VERIFY"
-    if [ "$VERIFY" != "10443" ]; then
-        echo -e "${RED}✗ Port is wrong! Expected 10443, got $VERIFY${NC}"
+    echo -e "${GREEN}✓ Port set command succeeded${NC}"
+    VERIFY=$(zowe config get profiles.zosmf.default.port --global-config true 2>/dev/null)
+    echo "  Verified (with flag): '$VERIFY'"
+    if [ -z "$VERIFY" ]; then
+        echo -e "${YELLOW}⚠ Verification returned empty, trying without --global-config flag...${NC}"
+        VERIFY=$(zowe config get profiles.zosmf.default.port 2>/dev/null)
+        echo "  Verified (no flag): '$VERIFY'"
+    fi
+    if [ "$VERIFY" != "10443" ] && [ -n "$VERIFY" ]; then
+        echo -e "${RED}✗ Port is wrong! Expected 10443, got '$VERIFY'${NC}"
+    elif [ -z "$VERIFY" ]; then
+        echo -e "${RED}✗ Port verification returned empty! Config may not be saving correctly${NC}"
+        echo -e "${YELLOW}Let's check the config file directly...${NC}"
+        if [ -f ~/.zowe/zowe.config.json ]; then
+            echo "Checking ~/.zowe/zowe.config.json:"
+            grep -A 5 "port" ~/.zowe/zowe.config.json || echo "Port not found in JSON"
+        fi
     fi
 else
     echo -e "${RED}✗ Failed to set port${NC}"
@@ -118,12 +158,12 @@ read -p "Press Enter to continue..."
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${GREEN}STEP 7: Set User${NC}"
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo "Running: zowe config set profiles.zosmf.default.user $ZOWE_USER --global-config false"
-zowe config set profiles.zosmf.default.user "$ZOWE_USER" --global-config false
+echo "Running: zowe config set profiles.zosmf.default.user $ZOWE_USER --global-config true"
+zowe config set profiles.zosmf.default.user "$ZOWE_USER" --global-config true
 if [ $? -eq 0 ]; then
     echo -e "${GREEN}✓ User set${NC}"
-    VERIFY=$(zowe config get profiles.zosmf.default.user --global-config false 2>/dev/null)
-    echo "  Verified: $VERIFY"
+    VERIFY=$(zowe config get profiles.zosmf.default.user --global-config true 2>/dev/null || zowe config get profiles.zosmf.default.user 2>/dev/null)
+    echo "  Verified: '$VERIFY'"
 else
     echo -e "${RED}✗ Failed to set user${NC}"
 fi
@@ -134,8 +174,8 @@ read -p "Press Enter to continue..."
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${GREEN}STEP 8: Set Password${NC}"
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo "Running: zowe config set profiles.zosmf.default.password [hidden] --global-config false"
-zowe config set profiles.zosmf.default.password "$ZOWE_PASS" --global-config false
+echo "Running: zowe config set profiles.zosmf.default.password [hidden] --global-config true"
+zowe config set profiles.zosmf.default.password "$ZOWE_PASS" --global-config true
 if [ $? -eq 0 ]; then
     echo -e "${GREEN}✓ Password set${NC}"
     echo "  (Password stored in config)"
@@ -149,8 +189,8 @@ read -p "Press Enter to continue..."
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${GREEN}STEP 9: Set reject-unauthorized${NC}"
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo "Running: zowe config set profiles.zosmf.default.reject-unauthorized false --global-config false"
-zowe config set profiles.zosmf.default.reject-unauthorized false --global-config false
+echo "Running: zowe config set profiles.zosmf.default.reject-unauthorized false --global-config true"
+zowe config set profiles.zosmf.default.reject-unauthorized false --global-config true
 if [ $? -eq 0 ]; then
     echo -e "${GREEN}✓ reject-unauthorized set to false${NC}"
 else
@@ -163,14 +203,21 @@ read -p "Press Enter to continue..."
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${GREEN}STEP 10: Set Profile as Default${NC}"
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo "Running: zowe config set defaults.zosmf default --global-config false"
-zowe config set defaults.zosmf default --global-config false
+echo "Running: zowe config set defaults.zosmf default --global-config true"
+zowe config set defaults.zosmf default --global-config true
 if [ $? -eq 0 ]; then
-    echo -e "${GREEN}✓ Default profile set${NC}"
-    VERIFY=$(zowe config get defaults.zosmf --global-config false 2>/dev/null)
-    echo "  Verified: $VERIFY"
-    if [ "$VERIFY" != "default" ]; then
+    echo -e "${GREEN}✓ Default profile set command succeeded${NC}"
+    VERIFY=$(zowe config get defaults.zosmf --global-config true 2>/dev/null || zowe config get defaults.zosmf 2>/dev/null)
+    echo "  Verified: '$VERIFY'"
+    if [ "$VERIFY" != "default" ] && [ -n "$VERIFY" ]; then
         echo -e "${RED}✗ Default is wrong! Expected 'default', got '$VERIFY'${NC}"
+    elif [ -z "$VERIFY" ]; then
+        echo -e "${RED}✗ Default verification returned empty!${NC}"
+        echo -e "${YELLOW}Checking config file directly...${NC}"
+        if [ -f ~/.zowe/zowe.config.json ]; then
+            echo "Checking ~/.zowe/zowe.config.json:"
+            grep -A 2 "defaults" ~/.zowe/zowe.config.json || echo "Defaults not found in JSON"
+        fi
     fi
 else
     echo -e "${RED}✗ Failed to set default profile${NC}"
@@ -182,12 +229,20 @@ read -p "Press Enter to continue..."
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${GREEN}STEP 11: Final Configuration${NC}"
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${YELLOW}Complete config file:${NC}"
+echo -e "${YELLOW}Checking all config files:${NC}"
+echo ""
 if [ -f ~/.zowe/zowe.config.json ]; then
+    echo -e "${GREEN}✓ Found: ~/.zowe/zowe.config.json${NC}"
     cat ~/.zowe/zowe.config.json | python3 -m json.tool 2>/dev/null || cat ~/.zowe/zowe.config.json
-else
-    echo -e "${RED}Config file not found!${NC}"
+    echo ""
 fi
+if [ -f ~/.zowe/zosmf/profiles/zosmf_meta.yaml ]; then
+    echo -e "${GREEN}✓ Found: ~/.zowe/zosmf/profiles/zosmf_meta.yaml${NC}"
+    cat ~/.zowe/zosmf/profiles/zosmf_meta.yaml
+    echo ""
+fi
+echo -e "${YELLOW}All files in ~/.zowe:${NC}"
+find ~/.zowe -type f 2>/dev/null | head -20
 echo ""
 read -p "Press Enter to continue..."
 

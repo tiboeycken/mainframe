@@ -184,11 +184,29 @@ CONFIG_FILE="$HOME/.zowe/zowe.config.json"
 PROFILE_NAME="default"
 
 # Initialize config if it doesn't exist
-if [ ! -f "$CONFIG_FILE" ]; then
+# Try both global-config true and false to find which works
+if [ ! -f ~/.zowe/zowe.config.json ] && [ ! -f ~/.zowe/zosmf/profiles/zosmf_meta.yaml ]; then
     echo -e "${GREEN}Initializing Zowe CLI configuration...${NC}"
-    zowe config init --global-config false 2>/dev/null || {
-        echo -e "${YELLOW}Config init had issues, continuing anyway...${NC}"
+    echo -e "${YELLOW}Trying with --global-config true (recommended)...${NC}"
+    zowe config init --global-config true 2>/dev/null || {
+        echo -e "${YELLOW}Trying with --global-config false...${NC}"
+        zowe config init --global-config false 2>/dev/null || {
+            echo -e "${YELLOW}Config init had issues, continuing anyway...${NC}"
+        }
     }
+fi
+
+# Determine which config file exists
+if [ -f ~/.zowe/zowe.config.json ]; then
+    CONFIG_FILE=~/.zowe/zowe.config.json
+    USE_GLOBAL_CONFIG=true
+elif [ -f ~/.zowe/zosmf/profiles/zosmf_meta.yaml ]; then
+    CONFIG_FILE=~/.zowe/zosmf/profiles/zosmf_meta.yaml
+    USE_GLOBAL_CONFIG=true
+    echo -e "${YELLOW}Note: Using YAML config file (older format)${NC}"
+else
+    CONFIG_FILE=~/.zowe/zowe.config.json
+    USE_GLOBAL_CONFIG=true
 fi
 
 # Check if profile already exists in config
@@ -237,33 +255,58 @@ if [ "$ZOWE_USER" != "SKIP" ]; then
     # Use new config set method (Zowe CLI v2)
     echo -e "${YELLOW}Setting profile configuration...${NC}"
     
+    # Use --global-config true (based on user feedback, this works better)
     # Set host
-    zowe config set profiles.zosmf.$PROFILE_NAME.host 204.90.115.200 --global-config false 2>/dev/null || true
+    echo -e "${YELLOW}Setting host...${NC}"
+    zowe config set profiles.zosmf.$PROFILE_NAME.host 204.90.115.200 --global-config true 2>/dev/null || {
+        zowe config set profiles.zosmf.$PROFILE_NAME.host 204.90.115.200 --global-config false 2>/dev/null || true
+    }
     
     # Set port (IMPORTANT: 10443, not 443)
-    zowe config set profiles.zosmf.$PROFILE_NAME.port 10443 --global-config false 2>/dev/null || true
+    echo -e "${YELLOW}Setting port to 10443...${NC}"
+    zowe config set profiles.zosmf.$PROFILE_NAME.port 10443 --global-config true 2>/dev/null || {
+        zowe config set profiles.zosmf.$PROFILE_NAME.port 10443 --global-config false 2>/dev/null || true
+    }
     
-    # Set user (secure)
-    echo "$ZOWE_PASS" | zowe config set profiles.zosmf.$PROFILE_NAME.user "$ZOWE_USER" --secure --global-config false 2>/dev/null || {
-        # Fallback if secure doesn't work
+    # Verify port immediately
+    VERIFY_PORT=$(zowe config get profiles.zosmf.$PROFILE_NAME.port --global-config true 2>/dev/null || \
+                  zowe config get profiles.zosmf.$PROFILE_NAME.port --global-config false 2>/dev/null || \
+                  zowe config get profiles.zosmf.$PROFILE_NAME.port 2>/dev/null || \
+                  echo "")
+    if [ "$VERIFY_PORT" = "10443" ]; then
+        echo -e "${GREEN}✓ Port verified: 10443${NC}"
+    else
+        echo -e "${YELLOW}⚠ Port verification: '$VERIFY_PORT' (expected 10443)${NC}"
+    fi
+    
+    # Set user (without --secure to avoid prompts)
+    echo -e "${YELLOW}Setting user...${NC}"
+    zowe config set profiles.zosmf.$PROFILE_NAME.user "$ZOWE_USER" --global-config true 2>/dev/null || {
         zowe config set profiles.zosmf.$PROFILE_NAME.user "$ZOWE_USER" --global-config false 2>/dev/null || true
     }
     
-    # Set password (secure)
-    echo "$ZOWE_PASS" | zowe config set profiles.zosmf.$PROFILE_NAME.password "$ZOWE_PASS" --secure --global-config false 2>/dev/null || {
-        # Fallback if secure doesn't work
-        echo "$ZOWE_PASS" | zowe config set profiles.zosmf.$PROFILE_NAME.password "$ZOWE_PASS" --global-config false 2>/dev/null || true
+    # Set password (without --secure to avoid prompts)
+    echo -e "${YELLOW}Setting password...${NC}"
+    zowe config set profiles.zosmf.$PROFILE_NAME.password "$ZOWE_PASS" --global-config true 2>/dev/null || {
+        zowe config set profiles.zosmf.$PROFILE_NAME.password "$ZOWE_PASS" --global-config false 2>/dev/null || true
     }
     
     # Set reject-unauthorized
-    zowe config set profiles.zosmf.$PROFILE_NAME.reject-unauthorized false --global-config false 2>/dev/null || true
+    zowe config set profiles.zosmf.$PROFILE_NAME.reject-unauthorized false --global-config true 2>/dev/null || {
+        zowe config set profiles.zosmf.$PROFILE_NAME.reject-unauthorized false --global-config false 2>/dev/null || true
+    }
     
     # Set as default (CRITICAL: This tells Zowe CLI which profile to use)
     echo -e "${YELLOW}Setting profile as default...${NC}"
-    zowe config set defaults.zosmf $PROFILE_NAME --global-config false 2>/dev/null || true
+    zowe config set defaults.zosmf $PROFILE_NAME --global-config true 2>/dev/null || {
+        zowe config set defaults.zosmf $PROFILE_NAME --global-config false 2>/dev/null || true
+    }
     
     # Verify default was set
-    DEFAULT_PROFILE=$(zowe config get defaults.zosmf --global-config false 2>/dev/null || echo "none")
+    DEFAULT_PROFILE=$(zowe config get defaults.zosmf --global-config true 2>/dev/null || \
+                      zowe config get defaults.zosmf --global-config false 2>/dev/null || \
+                      zowe config get defaults.zosmf 2>/dev/null || \
+                      echo "none")
     if [ "$DEFAULT_PROFILE" = "$PROFILE_NAME" ]; then
         echo -e "${GREEN}✓ Profile '$PROFILE_NAME' is set as default${NC}"
     else
@@ -323,7 +366,10 @@ if [ "$ZOWE_USER" != "SKIP" ]; then
         fi
         
         # Verify profile can be read
-        VERIFY_HOST=$(zowe config get profiles.zosmf.$PROFILE_NAME.host --global-config false 2>/dev/null || echo "unknown")
+        VERIFY_HOST=$(zowe config get profiles.zosmf.$PROFILE_NAME.host --global-config true 2>/dev/null || \
+                      zowe config get profiles.zosmf.$PROFILE_NAME.host --global-config false 2>/dev/null || \
+                      zowe config get profiles.zosmf.$PROFILE_NAME.host 2>/dev/null || \
+                      echo "unknown")
         if [ "$VERIFY_HOST" != "unknown" ]; then
             echo -e "${GREEN}✓ Profile configuration is valid${NC}"
             echo "  Host: $VERIFY_HOST"
@@ -359,7 +405,10 @@ if [ ! -f "$CONFIG_FILE" ]; then
     fi
 else
     # Verify default profile is set
-    DEFAULT_PROFILE=$(zowe config get defaults.zosmf --global-config false 2>/dev/null || echo "none")
+    DEFAULT_PROFILE=$(zowe config get defaults.zosmf --global-config true 2>/dev/null || \
+                      zowe config get defaults.zosmf --global-config false 2>/dev/null || \
+                      zowe config get defaults.zosmf 2>/dev/null || \
+                      echo "none")
     echo -e "${YELLOW}Default profile: $DEFAULT_PROFILE${NC}"
     
     if [ "$DEFAULT_PROFILE" != "$PROFILE_NAME" ] && [ "$DEFAULT_PROFILE" != "none" ]; then
