@@ -98,97 +98,49 @@ def find_zowe_executable():
     return "zowe"  # Fallback to just "zowe" and let subprocess handle the error
 
 
-def get_zowe_credentials():
-    """Get Zowe CLI credentials from environment variables or config file."""
-    # Try environment variables first
-    host = os.environ.get("ZOWE_HOST", "204.90.115.200")
-    port = os.environ.get("ZOWE_PORT", "10443")
-    user = os.environ.get("ZOWE_USER")
-    password = os.environ.get("ZOWE_PASS")
-    
-    # If not in environment, try config file (for Raspberry Pi)
-    if not user or not password:
-        config_file = os.path.join(os.path.dirname(__file__), ".zowe_config")
-        if os.path.exists(config_file):
-            try:
-                with open(config_file, 'r') as f:
-                    for line in f:
-                        line = line.strip()
-                        if line and not line.startswith('#') and '=' in line:
-                            key, value = line.split('=', 1)
-                            if key == "ZOWE_HOST":
-                                host = value
-                            elif key == "ZOWE_PORT":
-                                port = value
-                            elif key == "ZOWE_USER":
-                                user = value
-                            elif key == "ZOWE_PASS":
-                                password = value
-            except Exception:
-                pass
-    
-    return host, port, user, password
+def get_zowe_profile_name():
+    """Get the default zosmf profile name from Zowe config."""
+    zowe_config_path = os.path.expanduser("~/.zowe/zowe.config.json")
+    if os.path.exists(zowe_config_path):
+        try:
+            with open(zowe_config_path, 'r') as f:
+                zowe_config = json.load(f)
+                defaults = zowe_config.get("defaults", {})
+                zosmf_profile_name = defaults.get("zosmf")
+                if zosmf_profile_name:
+                    return zosmf_profile_name
+        except Exception:
+            pass
+    # Default fallback
+    return "zosmf"
 
 
 def run_zowe_cmd(cmd_list):
-    """Run Zowe CLI command with explicit parameters and return parsed JSON or error."""
-    # Replace "zowe" with the found executable path
+    """Run Zowe CLI command using profile."""
     zowe_exe = find_zowe_executable()
     if cmd_list[0] == "zowe":
         cmd_list[0] = zowe_exe
     
-    # Get credentials and add explicit parameters
-    host, port, user, password = get_zowe_credentials()
-    
-    # Add explicit parameters to command (always use these, no profiles)
-    # Insert after "zowe" and before the actual command
-    explicit_params = [
-        "--host", host,
-        "--port", port,
-        "--reject-unauthorized", "false"
-    ]
-    
-    # Add user and password if available
-    if user:
-        explicit_params.extend(["--user", user])
-    if password:
-        explicit_params.extend(["--password", password])
-    
-    # Insert explicit params after "zowe" command
-    new_cmd = [cmd_list[0]] + explicit_params + cmd_list[1:]
-    
-    # Set environment for Node.js certificate bypass
+    profile_name = get_zowe_profile_name()
     env = os.environ.copy()
     env["NODE_TLS_REJECT_UNAUTHORIZED"] = "0"
-    env["ZOWE_CLI_IMPERATIVE_CREDENTIAL_MANAGER"] = "imperative-credential-manager"
+    
+    new_cmd = [cmd_list[0], "--zosmf-profile", profile_name] + cmd_list[1:]
     
     try:
-        # On Windows, use shell=True to ensure PATH is properly resolved
         use_shell = platform.system() == "Windows"
-        result = subprocess.run(
-            new_cmd,
-            capture_output=True,
-            text=True,
-            timeout=30,
-            shell=use_shell,
-            env=env
-        )
+        result = subprocess.run(new_cmd, capture_output=True, text=True, timeout=30, shell=use_shell, env=env)
+        
         if result.returncode != 0:
-            return {"error": result.stderr or result.stdout}
-
+            return {"error": result.stderr or result.stdout or f"Command failed (rc: {result.returncode})"}
+        
         output = result.stdout.strip()
         if not output:
             return {"error": "Empty response from Zowe CLI"}
-
+        
         return json.loads(output)
     except FileNotFoundError:
-        return {
-            "error": "Zowe CLI not found. Please install Zowe CLI and ensure it's in your PATH.\n"
-            "Install via: npm install -g @zowe/cli\n"
-            "Or download from: https://www.zowe.org/cli.html\n"
-            "Then verify with: zowe --version\n\n"
-            f"Python tried to find: {zowe_exe}"
-        }
+        return {"error": f"Zowe CLI not found. Install via: npm install -g @zowe/cli\nTried: {zowe_exe}"}
     except subprocess.TimeoutExpired:
         return {"error": "Command timed out"}
     except json.JSONDecodeError:
@@ -208,6 +160,8 @@ def get_system_info():
 
 def get_user_jobs(user):
     """Get JES jobs for user via Zowe CLI."""
+    # Note: --owner is optional when using explicit --user parameter
+    # But we'll include it for clarity
     cmd = ["zowe", "zos-jobs", "list", "jobs", "--owner", user, "--rfj"]
     data = run_zowe_cmd(cmd)
 

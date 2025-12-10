@@ -48,6 +48,8 @@ sudo apt-get install -y \
     build-essential \
     libffi-dev \
     libssl-dev \
+    dbus-x11 \
+    gnome-keyring \
     unclutter \
     xdotool \
     x11-xserver-utils
@@ -147,15 +149,35 @@ echo -e "${GREEN}[7/8] Installing Python dependencies...${NC}"
 pip install --upgrade pip
 pip install -r requirements.txt
 
-# Configure Zowe CLI - Simple approach: ask once, use explicit parameters always
+# Configure Zowe CLI with keyring support
 echo -e "${GREEN}[8/8] Configuring Zowe CLI...${NC}"
 echo ""
 echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${YELLOW}Zowe CLI Configuration${NC}"
 echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
-echo "We'll ask for your credentials ONCE and use them explicitly in all commands."
-echo "This is more reliable than using profiles."
+echo "Setting up keyring for secure credential storage..."
+echo ""
+
+# Setup keyring (required for Zowe CLI secure storage)
+export $(dbus-launch)
+echo -e "${YELLOW}Enter keyring password (can be empty, just press Enter):${NC}"
+gnome-keyring-daemon -r --unlock --components=secrets &
+
+# Add keyring setup to .bashrc
+if ! grep -q "dbus-launch" ~/.bashrc 2>/dev/null; then
+    echo '' >> ~/.bashrc
+    echo '# Keyring setup for Zowe CLI' >> ~/.bashrc
+    echo 'export $(dbus-launch)' >> ~/.bashrc
+    echo 'gnome-keyring-daemon -r --unlock --components=secrets &' >> ~/.bashrc
+    echo -e "${GREEN}✓ Added keyring setup to ~/.bashrc${NC}"
+fi
+
+export NODE_TLS_REJECT_UNAUTHORIZED=0
+if ! grep -q "NODE_TLS_REJECT_UNAUTHORIZED" ~/.bashrc 2>/dev/null; then
+    echo 'export NODE_TLS_REJECT_UNAUTHORIZED=0' >> ~/.bashrc
+fi
+
 echo ""
 echo -e "${BLUE}Connection details:${NC}"
 echo "  - Host: 204.90.115.200"
@@ -167,64 +189,66 @@ echo -e "${YELLOW}Enter your z/OS password (hidden):${NC}"
 read -rs ZOWE_PASS
 echo ""
 
-# Set environment variables for Zowe CLI
-export ZOWE_HOST="204.90.115.200"
-export ZOWE_PORT="10443"
-export ZOWE_USER="$ZOWE_USER"
-export ZOWE_PASS="$ZOWE_PASS"
-export ZOWE_CLI_IMPERATIVE_CREDENTIAL_MANAGER="imperative-credential-manager"
-export NODE_TLS_REJECT_UNAUTHORIZED=0
+# Also create a Zowe profile (like on Windows) for compatibility
+echo -e "${GREEN}Creating Zowe CLI profile (like on Windows)...${NC}"
+cd ~
+mkdir -p ~/.zowe
 
-# Save to a simple config file for the service
-ZOWE_CONFIG_FILE="$OPSDASH_DIR/.zowe_config"
-cat > "$ZOWE_CONFIG_FILE" <<EOF
-# Zowe CLI Configuration for OpsDash
-# This file contains credentials - keep it secure!
-ZOWE_HOST=204.90.115.200
-ZOWE_PORT=10443
-ZOWE_USER=$ZOWE_USER
-ZOWE_PASS=$ZOWE_PASS
-ZOWE_CLI_IMPERATIVE_CREDENTIAL_MANAGER=imperative-credential-manager
-NODE_TLS_REJECT_UNAUTHORIZED=0
+# Create profile structure
+cat > ~/.zowe/zowe.config.json <<EOF
+{
+    "\$schema": "./zowe.schema.json",
+    "profiles": {
+        "zosmf": {
+            "type": "zosmf",
+            "properties": {
+                "host": "204.90.115.200",
+                "port": 10443,
+                "rejectUnauthorized": false
+            },
+            "secure": [
+                "user",
+                "password"
+            ]
+        },
+        "global_base": {
+            "type": "base",
+            "properties": {
+                "host": "204.90.115.200",
+                "rejectUnauthorized": false
+            },
+            "secure": [
+                "user",
+                "password"
+            ]
+        }
+    },
+    "defaults": {
+        "zosmf": "zosmf",
+        "base": "global_base"
+    },
+    "autoStore": true
+}
 EOF
-chmod 600 "$ZOWE_CONFIG_FILE"
-echo -e "${GREEN}✓ Credentials saved to $ZOWE_CONFIG_FILE (secure)${NC}"
 
-# Add to .bashrc for interactive sessions
-if ! grep -q "ZOWE_CLI_IMPERATIVE_CREDENTIAL_MANAGER" ~/.bashrc 2>/dev/null; then
-    echo '' >> ~/.bashrc
-    echo '# Zowe CLI configuration' >> ~/.bashrc
-    echo 'export ZOWE_CLI_IMPERATIVE_CREDENTIAL_MANAGER="imperative-credential-manager"' >> ~/.bashrc
-    echo 'export NODE_TLS_REJECT_UNAUTHORIZED=0' >> ~/.bashrc
-    echo -e "${GREEN}✓ Added to ~/.bashrc for future sessions${NC}"
-fi
-if [ -f ~/.zshrc ] && ! grep -q "ZOWE_CLI_IMPERATIVE_CREDENTIAL_MANAGER" ~/.zshrc 2>/dev/null; then
-    echo '' >> ~/.zshrc
-    echo '# Zowe CLI configuration' >> ~/.zshrc
-    echo 'export ZOWE_CLI_IMPERATIVE_CREDENTIAL_MANAGER="imperative-credential-manager"' >> ~/.zshrc
-    echo 'export NODE_TLS_REJECT_UNAUTHORIZED=0' >> ~/.zshrc
-fi
+# Store credentials securely using Zowe CLI with keyring
+echo -e "${YELLOW}Storing credentials in Zowe profile (using keyring)...${NC}"
+export NODE_TLS_REJECT_UNAUTHORIZED=0
+echo "$ZOWE_PASS" | zowe config set profiles.zosmf.zosmf.user "$ZOWE_USER" --secure --global-config true
+echo "$ZOWE_PASS" | zowe config set profiles.zosmf.zosmf.password "$ZOWE_PASS" --secure --global-config true
+echo "$ZOWE_PASS" | zowe config set profiles.base.global_base.user "$ZOWE_USER" --secure --global-config true
+echo "$ZOWE_PASS" | zowe config set profiles.base.global_base.password "$ZOWE_PASS" --secure --global-config true
 
-echo -e "${GREEN}✓ Configuration complete${NC}"
+echo -e "${GREEN}✓ Zowe profile created and credentials stored${NC}"
 echo ""
 
-# Test Zowe connection with explicit parameters (no profiles needed!)
-echo ""
-echo -e "${GREEN}Testing Zowe CLI connection with explicit parameters...${NC}"
-echo -e "${YELLOW}Using explicit parameters (no profiles) - this is the most reliable method${NC}"
-if zowe zosmf check status --host "$ZOWE_HOST" --port "$ZOWE_PORT" --user "$ZOWE_USER" --password "$ZOWE_PASS" --reject-unauthorized false 2>/dev/null; then
+# Test Zowe connection with profile
+echo -e "${GREEN}Testing Zowe CLI connection...${NC}"
+if zowe zosmf check status --zosmf-profile zosmf 2>/dev/null; then
     echo -e "${GREEN}✓ Zowe CLI connection successful!${NC}"
-    echo -e "${GREEN}✓ Credentials are correct and connection works${NC}"
 else
-    echo -e "${RED}✗ Zowe CLI connection failed${NC}"
-    echo -e "${YELLOW}Troubleshooting:${NC}"
-    echo "  1. Verify host and port: $ZOWE_HOST:$ZOWE_PORT"
-    echo "  2. Check your credentials (password may have expired)"
-    echo "  3. Ensure network connectivity: ping $ZOWE_HOST"
-    echo "  4. Check if mainframe is accessible: curl -k https://$ZOWE_HOST:$ZOWE_PORT/zosmf/info"
-    echo ""
-    echo -e "${YELLOW}Note: Connection test failed, but credentials are saved.${NC}"
-    echo -e "${YELLOW}OpsDash will use explicit parameters and should work.${NC}"
+    echo -e "${YELLOW}⚠ Connection test failed, but profile is configured${NC}"
+    echo -e "${YELLOW}  You can test manually: zowe zosmf check status --zosmf-profile zosmf${NC}"
 fi
 
 # Create systemd service for auto-start
@@ -240,10 +264,9 @@ Type=simple
 User=$USER
 WorkingDirectory=$OPSDASH_DIR
 Environment="PATH=$OPSDASH_DIR/venv/bin:/usr/local/bin:/usr/bin:/bin"
-Environment="ZOWE_CLI_IMPERATIVE_CREDENTIAL_MANAGER=imperative-credential-manager"
 Environment="NODE_TLS_REJECT_UNAUTHORIZED=0"
-EnvironmentFile=$ZOWE_CONFIG_FILE
-ExecStart=$OPSDASH_DIR/venv/bin/streamlit run opsdash_web.py --server.address=$STREAMLIT_ADDRESS --server.port=$STREAMLIT_PORT --server.headless=true
+Environment="DISPLAY=:0"
+ExecStart=/bin/bash -c 'export $(dbus-launch) && gnome-keyring-daemon -r --unlock --components=secrets & sleep 2 && $OPSDASH_DIR/venv/bin/streamlit run opsdash_web.py --server.address=$STREAMLIT_ADDRESS --server.port=$STREAMLIT_PORT --server.headless=true'
 Restart=always
 RestartSec=10
 
@@ -268,9 +291,6 @@ echo "  2. Check status: ${GREEN}sudo systemctl status opsdash${NC}"
 echo "  3. View logs: ${GREEN}sudo journalctl -u opsdash -f${NC}"
 echo "  4. Access dashboard: ${GREEN}http://$(hostname -I | awk '{print $1}'):$STREAMLIT_PORT${NC}"
 echo "     or from any device on your network: ${GREEN}http://raspberrypi.local:$STREAMLIT_PORT${NC}"
-echo ""
-echo -e "${YELLOW}Optional - Kiosk Mode Setup:${NC}"
-echo "  Run: ${GREEN}bash setup_kiosk_mode.sh${NC} (if you want full-screen browser on boot)"
 echo ""
 
 # Ask if user wants to start the service now
