@@ -32,12 +32,14 @@ fi
 echo ""
 read -p "Press Enter to continue..."
 
-# Step 2: Set credential manager
+# Step 2: Set credential manager and certificate bypass
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${GREEN}STEP 2: Set Credential Manager (avoid keyring)${NC}"
+echo -e "${GREEN}STEP 2: Set Credential Manager & Certificate Bypass${NC}"
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 export ZOWE_CLI_IMPERATIVE_CREDENTIAL_MANAGER="imperative-credential-manager"
+export NODE_TLS_REJECT_UNAUTHORIZED=0
 echo -e "${GREEN}✓ Set: ZOWE_CLI_IMPERATIVE_CREDENTIAL_MANAGER=imperative-credential-manager${NC}"
+echo -e "${GREEN}✓ Set: NODE_TLS_REJECT_UNAUTHORIZED=0 (for self-signed certificates)${NC}"
 echo ""
 read -p "Press Enter to continue..."
 
@@ -45,9 +47,15 @@ read -p "Press Enter to continue..."
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${GREEN}STEP 3: Initialize Zowe Config${NC}"
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo "Running: zowe config init --global-config false"
+echo -e "${YELLOW}IMPORTANT: Changing to home directory first...${NC}"
+cd ~
+export ZOWE_CLI_HOME="$HOME"
+echo "Current directory: $(pwd)"
+echo "ZOWE_CLI_HOME: $ZOWE_CLI_HOME"
 echo ""
-zowe config init --global-config false
+echo "Running: zowe config init --global-config true"
+echo ""
+zowe config init --global-config true
 if [ $? -eq 0 ]; then
     echo -e "${GREEN}✓ Config initialized${NC}"
 else
@@ -102,10 +110,13 @@ echo "  Password: [hidden]"
 echo ""
 read -p "Press Enter to continue..."
 
-# Step 5: Try with global-config true instead
+# Step 5: Set host (ensure we're in home directory)
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${GREEN}STEP 5: Set Host (trying --global-config true)${NC}"
+echo -e "${GREEN}STEP 5: Set Host${NC}"
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+cd ~
+export ZOWE_CLI_HOME="$HOME"
+echo "Current directory: $(pwd)"
 echo "Running: zowe config set profiles.zosmf.default.host 204.90.115.200 --global-config true"
 zowe config set profiles.zosmf.default.host 204.90.115.200 --global-config true
 if [ $? -eq 0 ]; then
@@ -127,6 +138,9 @@ read -p "Press Enter to continue..."
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${GREEN}STEP 6: Set Port (IMPORTANT: 10443, not 443)${NC}"
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+cd ~
+export ZOWE_CLI_HOME="$HOME"
+echo "Current directory: $(pwd)"
 echo "Running: zowe config set profiles.zosmf.default.port 10443 --global-config true"
 zowe config set profiles.zosmf.default.port 10443 --global-config true
 if [ $? -eq 0 ]; then
@@ -158,6 +172,8 @@ read -p "Press Enter to continue..."
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${GREEN}STEP 7: Set User${NC}"
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+cd ~
+export ZOWE_CLI_HOME="$HOME"
 echo "Running: zowe config set profiles.zosmf.default.user $ZOWE_USER --global-config true"
 zowe config set profiles.zosmf.default.user "$ZOWE_USER" --global-config true
 if [ $? -eq 0 ]; then
@@ -174,6 +190,8 @@ read -p "Press Enter to continue..."
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${GREEN}STEP 8: Set Password${NC}"
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+cd ~
+export ZOWE_CLI_HOME="$HOME"
 echo "Running: zowe config set profiles.zosmf.default.password [hidden] --global-config true"
 zowe config set profiles.zosmf.default.password "$ZOWE_PASS" --global-config true
 if [ $? -eq 0 ]; then
@@ -185,16 +203,29 @@ fi
 echo ""
 read -p "Press Enter to continue..."
 
-# Step 9: Set reject-unauthorized
+# Step 9: Set reject-unauthorized (CRITICAL for self-signed certificates)
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${GREEN}STEP 9: Set reject-unauthorized${NC}"
+echo -e "${GREEN}STEP 9: Set reject-unauthorized (for self-signed certificates)${NC}"
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+cd ~
+export ZOWE_CLI_HOME="$HOME"
+export NODE_TLS_REJECT_UNAUTHORIZED=0
+echo -e "${YELLOW}IMPORTANT: This is required for self-signed certificates!${NC}"
 echo "Running: zowe config set profiles.zosmf.default.reject-unauthorized false --global-config true"
 zowe config set profiles.zosmf.default.reject-unauthorized false --global-config true
 if [ $? -eq 0 ]; then
     echo -e "${GREEN}✓ reject-unauthorized set to false${NC}"
+    VERIFY=$(zowe config get profiles.zosmf.default.reject-unauthorized --global-config true 2>/dev/null || \
+             zowe config get profiles.zosmf.default.reject-unauthorized 2>/dev/null || \
+             echo "")
+    echo "  Verified: '$VERIFY'"
+    if [ "$VERIFY" != "false" ]; then
+        echo -e "${RED}✗ Verification failed! Expected 'false', got '$VERIFY'${NC}"
+        echo -e "${YELLOW}This may cause certificate errors${NC}"
+    fi
 else
-    echo -e "${YELLOW}⚠ Failed to set reject-unauthorized (may not be critical)${NC}"
+    echo -e "${RED}✗ Failed to set reject-unauthorized - THIS IS CRITICAL!${NC}"
+    echo -e "${YELLOW}Certificate errors will occur without this${NC}"
 fi
 echo ""
 read -p "Press Enter to continue..."
@@ -203,6 +234,8 @@ read -p "Press Enter to continue..."
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${GREEN}STEP 10: Set Profile as Default${NC}"
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+cd ~
+export ZOWE_CLI_HOME="$HOME"
 echo "Running: zowe config set defaults.zosmf default --global-config true"
 zowe config set defaults.zosmf default --global-config true
 if [ $? -eq 0 ]; then
@@ -250,7 +283,9 @@ read -p "Press Enter to continue..."
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${GREEN}STEP 12: Test Connection with Profile${NC}"
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+export NODE_TLS_REJECT_UNAUTHORIZED=0
 echo "Running: zowe zosmf check status --zosmf-profile default"
+echo -e "${YELLOW}Note: NODE_TLS_REJECT_UNAUTHORIZED=0 is set for self-signed certificates${NC}"
 echo ""
 zowe zosmf check status --zosmf-profile default
 PROFILE_RESULT=$?
@@ -267,6 +302,7 @@ read -p "Press Enter to continue..."
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${GREEN}STEP 13: Test Connection without Profile (uses default)${NC}"
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+export NODE_TLS_REJECT_UNAUTHORIZED=0
 echo "Running: zowe zosmf check status"
 echo ""
 zowe zosmf check status
@@ -284,7 +320,9 @@ read -p "Press Enter to continue..."
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${GREEN}STEP 14: Test Connection with Explicit Parameters${NC}"
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+export NODE_TLS_REJECT_UNAUTHORIZED=0
 echo "Running: zowe zosmf check status --host 204.90.115.200 --port 10443 --user $ZOWE_USER --password [hidden] --reject-unauthorized false"
+echo -e "${YELLOW}Note: Both NODE_TLS_REJECT_UNAUTHORIZED=0 and --reject-unauthorized false are set${NC}"
 echo ""
 zowe zosmf check status --host 204.90.115.200 --port 10443 --user "$ZOWE_USER" --password "$ZOWE_PASS" --reject-unauthorized false
 EXPLICIT_RESULT=$?

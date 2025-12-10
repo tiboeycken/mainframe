@@ -177,6 +177,19 @@ if [ -f ~/.zshrc ] && ! grep -q "ZOWE_CLI_IMPERATIVE_CREDENTIAL_MANAGER" ~/.zshr
     echo 'export ZOWE_CLI_IMPERATIVE_CREDENTIAL_MANAGER="imperative-credential-manager"' >> ~/.zshrc
 fi
 echo -e "${GREEN}✓ Keyring bypass configured${NC}"
+
+# Fix self-signed certificate issue
+echo -e "${GREEN}Configuring Node.js to accept self-signed certificates...${NC}"
+export NODE_TLS_REJECT_UNAUTHORIZED=0
+# Also set for future sessions
+if ! grep -q "NODE_TLS_REJECT_UNAUTHORIZED" ~/.bashrc 2>/dev/null; then
+    echo 'export NODE_TLS_REJECT_UNAUTHORIZED=0' >> ~/.bashrc
+    echo -e "${GREEN}✓ Added NODE_TLS_REJECT_UNAUTHORIZED=0 to ~/.bashrc${NC}"
+fi
+if [ -f ~/.zshrc ] && ! grep -q "NODE_TLS_REJECT_UNAUTHORIZED" ~/.zshrc 2>/dev/null; then
+    echo 'export NODE_TLS_REJECT_UNAUTHORIZED=0' >> ~/.zshrc
+fi
+echo -e "${GREEN}✓ Self-signed certificate bypass configured${NC}"
 echo ""
 
 # Check if config already exists
@@ -184,15 +197,21 @@ CONFIG_FILE="$HOME/.zowe/zowe.config.json"
 PROFILE_NAME="default"
 
 # Initialize config if it doesn't exist
-# Try both global-config true and false to find which works
+# IMPORTANT: Change to home directory first to ensure config is saved in ~/.zowe/
+cd ~
+echo -e "${GREEN}Changed to home directory to ensure config is saved in ~/.zowe/${NC}"
+
+# Ensure .zowe directory exists
+mkdir -p ~/.zowe
+
+# Initialize config - use --global-config true to save in home directory
 if [ ! -f ~/.zowe/zowe.config.json ] && [ ! -f ~/.zowe/zosmf/profiles/zosmf_meta.yaml ]; then
     echo -e "${GREEN}Initializing Zowe CLI configuration...${NC}"
-    echo -e "${YELLOW}Trying with --global-config true (recommended)...${NC}"
+    echo -e "${YELLOW}Using --global-config true to save in ~/.zowe/${NC}"
+    # Set ZOWE_CLI_HOME to ensure config goes to home directory
+    export ZOWE_CLI_HOME="$HOME"
     zowe config init --global-config true 2>/dev/null || {
-        echo -e "${YELLOW}Trying with --global-config false...${NC}"
-        zowe config init --global-config false 2>/dev/null || {
-            echo -e "${YELLOW}Config init had issues, continuing anyway...${NC}"
-        }
+        echo -e "${YELLOW}Config init had issues, continuing anyway...${NC}"
     }
 fi
 
@@ -200,12 +219,22 @@ fi
 if [ -f ~/.zowe/zowe.config.json ]; then
     CONFIG_FILE=~/.zowe/zowe.config.json
     USE_GLOBAL_CONFIG=true
+    echo -e "${GREEN}✓ Using JSON config: $CONFIG_FILE${NC}"
 elif [ -f ~/.zowe/zosmf/profiles/zosmf_meta.yaml ]; then
     CONFIG_FILE=~/.zowe/zosmf/profiles/zosmf_meta.yaml
     USE_GLOBAL_CONFIG=true
-    echo -e "${YELLOW}Note: Using YAML config file (older format)${NC}"
+    echo -e "${GREEN}✓ Using YAML config: $CONFIG_FILE${NC}"
 else
-    CONFIG_FILE=~/.zowe/zowe.config.json
+    # Check if config was created in current directory (wrong location)
+    if [ -f ./zowe.config.json ]; then
+        echo -e "${RED}✗ Config was created in wrong location: ./zowe.config.json${NC}"
+        echo -e "${YELLOW}Moving to correct location...${NC}"
+        mv ./zowe.config.json ~/.zowe/zowe.config.json 2>/dev/null || true
+        CONFIG_FILE=~/.zowe/zowe.config.json
+    else
+        CONFIG_FILE=~/.zowe/zowe.config.json
+        echo -e "${YELLOW}Config file will be created at: $CONFIG_FILE${NC}"
+    fi
     USE_GLOBAL_CONFIG=true
 fi
 
@@ -255,17 +284,23 @@ if [ "$ZOWE_USER" != "SKIP" ]; then
     # Use new config set method (Zowe CLI v2)
     echo -e "${YELLOW}Setting profile configuration...${NC}"
     
-    # Use --global-config true (based on user feedback, this works better)
+    # Ensure we're in home directory and ZOWE_CLI_HOME is set
+    cd ~
+    export ZOWE_CLI_HOME="$HOME"
+    
+    # Use --global-config true to save in ~/.zowe/
     # Set host
     echo -e "${YELLOW}Setting host...${NC}"
     zowe config set profiles.zosmf.$PROFILE_NAME.host 204.90.115.200 --global-config true 2>/dev/null || {
-        zowe config set profiles.zosmf.$PROFILE_NAME.host 204.90.115.200 --global-config false 2>/dev/null || true
+        echo -e "${YELLOW}Host set with true failed, trying without flag...${NC}"
+        zowe config set profiles.zosmf.$PROFILE_NAME.host 204.90.115.200 2>/dev/null || true
     }
     
     # Set port (IMPORTANT: 10443, not 443)
     echo -e "${YELLOW}Setting port to 10443...${NC}"
     zowe config set profiles.zosmf.$PROFILE_NAME.port 10443 --global-config true 2>/dev/null || {
-        zowe config set profiles.zosmf.$PROFILE_NAME.port 10443 --global-config false 2>/dev/null || true
+        echo -e "${YELLOW}Port set with true failed, trying without flag...${NC}"
+        zowe config set profiles.zosmf.$PROFILE_NAME.port 10443 2>/dev/null || true
     }
     
     # Verify port immediately
@@ -282,25 +317,49 @@ if [ "$ZOWE_USER" != "SKIP" ]; then
     # Set user (without --secure to avoid prompts)
     echo -e "${YELLOW}Setting user...${NC}"
     zowe config set profiles.zosmf.$PROFILE_NAME.user "$ZOWE_USER" --global-config true 2>/dev/null || {
-        zowe config set profiles.zosmf.$PROFILE_NAME.user "$ZOWE_USER" --global-config false 2>/dev/null || true
+        zowe config set profiles.zosmf.$PROFILE_NAME.user "$ZOWE_USER" 2>/dev/null || true
     }
     
     # Set password (without --secure to avoid prompts)
     echo -e "${YELLOW}Setting password...${NC}"
     zowe config set profiles.zosmf.$PROFILE_NAME.password "$ZOWE_PASS" --global-config true 2>/dev/null || {
-        zowe config set profiles.zosmf.$PROFILE_NAME.password "$ZOWE_PASS" --global-config false 2>/dev/null || true
+        zowe config set profiles.zosmf.$PROFILE_NAME.password "$ZOWE_PASS" 2>/dev/null || true
     }
     
-    # Set reject-unauthorized
+    # Set reject-unauthorized (CRITICAL for self-signed certificates)
+    echo -e "${YELLOW}Setting reject-unauthorized to false (for self-signed cert)...${NC}"
     zowe config set profiles.zosmf.$PROFILE_NAME.reject-unauthorized false --global-config true 2>/dev/null || {
-        zowe config set profiles.zosmf.$PROFILE_NAME.reject-unauthorized false --global-config false 2>/dev/null || true
+        zowe config set profiles.zosmf.$PROFILE_NAME.reject-unauthorized false 2>/dev/null || true
     }
+    
+    # Verify reject-unauthorized was set
+    VERIFY_REJECT=$(zowe config get profiles.zosmf.$PROFILE_NAME.reject-unauthorized --global-config true 2>/dev/null || \
+                    zowe config get profiles.zosmf.$PROFILE_NAME.reject-unauthorized 2>/dev/null || \
+                    echo "")
+    if [ "$VERIFY_REJECT" = "false" ]; then
+        echo -e "${GREEN}✓ reject-unauthorized verified: false${NC}"
+    else
+        echo -e "${YELLOW}⚠ reject-unauthorized verification: '$VERIFY_REJECT' (expected false)${NC}"
+        echo -e "${YELLOW}  This may cause certificate errors${NC}"
+    fi
     
     # Set as default (CRITICAL: This tells Zowe CLI which profile to use)
     echo -e "${YELLOW}Setting profile as default...${NC}"
     zowe config set defaults.zosmf $PROFILE_NAME --global-config true 2>/dev/null || {
-        zowe config set defaults.zosmf $PROFILE_NAME --global-config false 2>/dev/null || true
+        zowe config set defaults.zosmf $PROFILE_NAME 2>/dev/null || true
     }
+    
+    # Verify config file location
+    echo -e "${YELLOW}Verifying config file location...${NC}"
+    if [ -f ~/.zowe/zowe.config.json ]; then
+        echo -e "${GREEN}✓ Config file is in correct location: ~/.zowe/zowe.config.json${NC}"
+    elif [ -f ~/.zowe/zosmf/profiles/zosmf_meta.yaml ]; then
+        echo -e "${GREEN}✓ Config file is in correct location: ~/.zowe/zosmf/profiles/zosmf_meta.yaml${NC}"
+    else
+        echo -e "${YELLOW}⚠ Config file not found in ~/.zowe/${NC}"
+        echo -e "${YELLOW}Searching for config files...${NC}"
+        find ~ -name "zowe.config.json" -o -name "zosmf_meta.yaml" 2>/dev/null | head -5
+    fi
     
     # Verify default was set
     DEFAULT_PROFILE=$(zowe config get defaults.zosmf --global-config true 2>/dev/null || \
@@ -416,8 +475,12 @@ else
         zowe config set defaults.zosmf $PROFILE_NAME --global-config false 2>/dev/null || true
     fi
     
+    # Ensure NODE_TLS_REJECT_UNAUTHORIZED is set for certificate bypass
+    export NODE_TLS_REJECT_UNAUTHORIZED=0
+    
     # Try with explicit profile name first (most reliable)
     echo -e "${YELLOW}Testing connection with profile '$PROFILE_NAME'...${NC}"
+    echo -e "${YELLOW}Note: NODE_TLS_REJECT_UNAUTHORIZED=0 is set for self-signed certificates${NC}"
     if zowe zosmf check status --zosmf-profile $PROFILE_NAME 2>/dev/null; then
         echo -e "${GREEN}✓ Zowe CLI connection successful using profile '$PROFILE_NAME'!${NC}"
     # Try without profile name (uses default)
@@ -464,6 +527,7 @@ User=$USER
 WorkingDirectory=$OPSDASH_DIR
 Environment="PATH=$OPSDASH_DIR/venv/bin:/usr/local/bin:/usr/bin:/bin"
 Environment="ZOWE_CLI_IMPERATIVE_CREDENTIAL_MANAGER=imperative-credential-manager"
+Environment="NODE_TLS_REJECT_UNAUTHORIZED=0"
 ExecStart=$OPSDASH_DIR/venv/bin/streamlit run opsdash_web.py --server.address=$STREAMLIT_ADDRESS --server.port=$STREAMLIT_PORT --server.headless=true
 Restart=always
 RestartSec=10
