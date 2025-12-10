@@ -258,8 +258,19 @@ if [ "$ZOWE_USER" != "SKIP" ]; then
     # Set reject-unauthorized
     zowe config set profiles.zosmf.$PROFILE_NAME.reject-unauthorized false --global-config false 2>/dev/null || true
     
-    # Set as default
+    # Set as default (CRITICAL: This tells Zowe CLI which profile to use)
+    echo -e "${YELLOW}Setting profile as default...${NC}"
     zowe config set defaults.zosmf $PROFILE_NAME --global-config false 2>/dev/null || true
+    
+    # Verify default was set
+    DEFAULT_PROFILE=$(zowe config get defaults.zosmf --global-config false 2>/dev/null || echo "none")
+    if [ "$DEFAULT_PROFILE" = "$PROFILE_NAME" ]; then
+        echo -e "${GREEN}✓ Profile '$PROFILE_NAME' is set as default${NC}"
+    else
+        echo -e "${YELLOW}⚠ Default profile verification: got '$DEFAULT_PROFILE', expected '$PROFILE_NAME'${NC}"
+        echo -e "${YELLOW}  Trying to fix...${NC}"
+        zowe config set defaults.zosmf $PROFILE_NAME --global-config false 2>/dev/null || true
+    fi
     
     echo -e "${GREEN}✓ Profile configuration completed${NC}"
     
@@ -347,29 +358,46 @@ if [ ! -f "$CONFIG_FILE" ]; then
         echo "  ${GREEN}zowe config set defaults.zosmf default${NC}"
     fi
 else
-    # Try with profile first
-    if zowe zosmf check status 2>/dev/null; then
-        echo -e "${GREEN}✓ Zowe CLI connection successful using profile!${NC}"
+    # Verify default profile is set
+    DEFAULT_PROFILE=$(zowe config get defaults.zosmf --global-config false 2>/dev/null || echo "none")
+    echo -e "${YELLOW}Default profile: $DEFAULT_PROFILE${NC}"
+    
+    if [ "$DEFAULT_PROFILE" != "$PROFILE_NAME" ] && [ "$DEFAULT_PROFILE" != "none" ]; then
+        echo -e "${YELLOW}⚠ Default profile is '$DEFAULT_PROFILE', not '$PROFILE_NAME'. Fixing...${NC}"
+        zowe config set defaults.zosmf $PROFILE_NAME --global-config false 2>/dev/null || true
+    fi
+    
+    # Try with explicit profile name first (most reliable)
+    echo -e "${YELLOW}Testing connection with profile '$PROFILE_NAME'...${NC}"
+    if zowe zosmf check status --zosmf-profile $PROFILE_NAME 2>/dev/null; then
+        echo -e "${GREEN}✓ Zowe CLI connection successful using profile '$PROFILE_NAME'!${NC}"
+    # Try without profile name (uses default)
+    elif zowe zosmf check status 2>/dev/null; then
+        echo -e "${GREEN}✓ Zowe CLI connection successful using default profile!${NC}"
     # Try with explicit parameters if profile test fails
     elif [ -n "$ZOWE_USER" ] && [ -n "$ZOWE_PASS" ]; then
         echo -e "${YELLOW}Profile test failed, trying with explicit parameters...${NC}"
         if zowe zosmf check status --host 204.90.115.200 --port 10443 --user "$ZOWE_USER" --password "$ZOWE_PASS" --reject-unauthorized false 2>/dev/null; then
             echo -e "${GREEN}✓ Zowe CLI connection successful with explicit parameters!${NC}"
-            echo -e "${YELLOW}Note: Profile exists but may have wrong credentials. Connection works with explicit params.${NC}"
+            echo -e "${YELLOW}Note: Profile exists but may not be loading correctly. Connection works with explicit params.${NC}"
+            echo -e "${YELLOW}You may need to use: zowe zosmf check status --zosmf-profile $PROFILE_NAME${NC}"
         else
             echo -e "${RED}✗ Zowe CLI connection failed${NC}"
             echo -e "${YELLOW}Troubleshooting:${NC}"
             echo "  1. Verify host and port: 204.90.115.200:10443"
             echo "  2. Check your credentials (password may have expired)"
             echo "  3. Ensure network connectivity: ping 204.90.115.200"
-            echo "  4. Check config: zowe config get profiles.zosmf.default"
+            echo "  4. Check config: zowe config get profiles.zosmf.$PROFILE_NAME"
+            echo "  5. Check default: zowe config get defaults.zosmf"
             if [ -n "$ZOWE_USER" ]; then
-                echo "  5. Run manually: zowe zosmf check status --host 204.90.115.200 --port 10443 --user $ZOWE_USER --password <password> --reject-unauthorized false"
+                echo "  6. Try with explicit profile: zowe zosmf check status --zosmf-profile $PROFILE_NAME"
+                echo "  7. Or with explicit params: zowe zosmf check status --host 204.90.115.200 --port 10443 --user $ZOWE_USER --password <password> --reject-unauthorized false"
             fi
         fi
     else
         echo -e "${YELLOW}⚠ Cannot test with explicit parameters - credentials not available${NC}"
-        echo -e "${YELLOW}Test manually: zowe zosmf check status${NC}"
+        echo -e "${YELLOW}Test manually: zowe zosmf check status --zosmf-profile $PROFILE_NAME${NC}"
+        echo -e "${YELLOW}Or: zowe zosmf check status (if default is set)${NC}"
     fi
 fi
 
