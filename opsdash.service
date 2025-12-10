@@ -1,0 +1,18 @@
+[Unit]
+Description=OpsDash Mainframe Dashboard
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/opsdash
+Environment="PATH=/home/pi/.local/bin:/usr/local/bin:/usr/bin:/bin"
+ExecStart=/usr/local/bin/streamlit run opsdash_web.py --server.port 8501 --server.address 0.0.0.0 --server.headless true
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+
