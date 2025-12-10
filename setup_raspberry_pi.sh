@@ -179,42 +179,45 @@ fi
 echo -e "${GREEN}✓ Keyring bypass configured${NC}"
 echo ""
 
-# Check if profile already exists
-if zowe profiles list zosmf-profiles --ow-json 2>/dev/null | grep -q "default"; then
-    echo -e "${YELLOW}Default profile exists. Checking port configuration...${NC}"
-    
-    # Check current port
-    CURRENT_PORT=$(zowe profiles get zosmf-profile default --property port 2>/dev/null || echo "unknown")
-    echo "  Current port in profile: $CURRENT_PORT"
-    
-    if [ "$CURRENT_PORT" != "10443" ] && [ "$CURRENT_PORT" != "unknown" ]; then
-        echo -e "${RED}✗ Wrong port detected ($CURRENT_PORT). Must fix to 10443${NC}"
-        echo -e "${YELLOW}Removing old profile to recreate with correct port...${NC}"
-        zowe profiles delete zosmf-profile default -y 2>/dev/null || {
-            # Force remove if delete fails
-            if [ -d ~/.zowe/profiles/zosmf/default ]; then
-                rm -rf ~/.zowe/profiles/zosmf/default
-                echo -e "${GREEN}✓ Profile directory removed${NC}"
-            fi
-        }
-    else
-        echo -e "${YELLOW}Update existing profile? (y/n)${NC}"
-        read -r update_response
-        if [[ "$update_response" =~ ^[Yy]$ ]]; then
-            echo -e "${YELLOW}Removing old profile to recreate...${NC}"
-            zowe profiles delete zosmf-profile default -y 2>/dev/null || {
-                if [ -d ~/.zowe/profiles/zosmf/default ]; then
-                    rm -rf ~/.zowe/profiles/zosmf/default
-                fi
-            }
+# Check if config already exists
+CONFIG_FILE="$HOME/.zowe/zowe.config.json"
+PROFILE_NAME="default"
+
+# Initialize config if it doesn't exist
+if [ ! -f "$CONFIG_FILE" ]; then
+    echo -e "${GREEN}Initializing Zowe CLI configuration...${NC}"
+    zowe config init --global-config false 2>/dev/null || {
+        echo -e "${YELLOW}Config init had issues, continuing anyway...${NC}"
+    }
+fi
+
+# Check if profile already exists in config
+if [ -f "$CONFIG_FILE" ]; then
+    if grep -q "profiles.zosmf.$PROFILE_NAME" "$CONFIG_FILE" 2>/dev/null; then
+        echo -e "${YELLOW}Profile '$PROFILE_NAME' exists. Checking port configuration...${NC}"
+        
+        # Check current port from config
+        CURRENT_PORT=$(zowe config get profiles.zosmf.$PROFILE_NAME.port 2>/dev/null || echo "unknown")
+        echo "  Current port in profile: $CURRENT_PORT"
+        
+        if [ "$CURRENT_PORT" != "10443" ] && [ "$CURRENT_PORT" != "unknown" ]; then
+            echo -e "${RED}✗ Wrong port detected ($CURRENT_PORT). Must fix to 10443${NC}"
+            echo -e "${YELLOW}Updating profile with correct port...${NC}"
+            ZOWE_USER=""  # Force recreation
         else
-            echo -e "${YELLOW}Skipping profile update${NC}"
-            ZOWE_USER=""
+            echo -e "${YELLOW}Update existing profile? (y/n)${NC}"
+            read -r update_response
+            if [[ "$update_response" =~ ^[Yy]$ ]]; then
+                ZOWE_USER=""  # Force update
+            else
+                echo -e "${YELLOW}Skipping profile update${NC}"
+                ZOWE_USER="SKIP"
+            fi
         fi
     fi
 fi
 
-if [ -n "$ZOWE_USER" ] || [ ! -d ~/.zowe/profiles/zosmf/default ]; then
+if [ "$ZOWE_USER" != "SKIP" ]; then
     # Get credentials if not already set
     if [ -z "$ZOWE_USER" ]; then
         echo -e "${YELLOW}Enter your z/OS user ID:${NC}"
@@ -224,84 +227,98 @@ if [ -n "$ZOWE_USER" ] || [ ! -d ~/.zowe/profiles/zosmf/default ]; then
         echo ""
     fi
     
-    echo -e "${GREEN}Creating Zowe CLI profile with port 10443...${NC}"
+    echo -e "${GREEN}Configuring Zowe CLI profile with port 10443...${NC}"
     echo -e "${YELLOW}IMPORTANT: Make sure port is 10443, not 443!${NC}"
+    echo -e "${YELLOW}Using new Zowe CLI v2 config method (config set)${NC}"
     
-    # Create profile with explicit port
-    # Use imperative-credential-manager to avoid keyring issues on headless systems
-    echo -e "${YELLOW}Running: zowe profiles create zosmf-profile default --host 204.90.115.200 --port 10443 --user $ZOWE_USER --reject-unauthorized false${NC}"
-    echo -e "${YELLOW}Note: Using file-based credential storage (no keyring required)${NC}"
-    
-    # Ensure the credential manager env var is set for this command
+    # Ensure the credential manager env var is set
     export ZOWE_CLI_IMPERATIVE_CREDENTIAL_MANAGER="imperative-credential-manager"
     
-    if zowe profiles create zosmf-profile default \
-        --host 204.90.115.200 \
-        --port 10443 \
-        --user "$ZOWE_USER" \
-        --password "$ZOWE_PASS" \
-        --reject-unauthorized false 2>&1; then
-        echo -e "${GREEN}✓ Profile create command completed${NC}"
-    else
-        PROFILE_EXIT_CODE=$?
-        echo -e "${YELLOW}Profile creation returned exit code: $PROFILE_EXIT_CODE${NC}"
-        echo -e "${YELLOW}This might be normal if profile already exists or if there were warnings${NC}"
-        echo -e "${YELLOW}Checking if profile was created anyway...${NC}"
-    fi
+    # Use new config set method (Zowe CLI v2)
+    echo -e "${YELLOW}Setting profile configuration...${NC}"
+    
+    # Set host
+    zowe config set profiles.zosmf.$PROFILE_NAME.host 204.90.115.200 --global-config false 2>/dev/null || true
+    
+    # Set port (IMPORTANT: 10443, not 443)
+    zowe config set profiles.zosmf.$PROFILE_NAME.port 10443 --global-config false 2>/dev/null || true
+    
+    # Set user (secure)
+    echo "$ZOWE_PASS" | zowe config set profiles.zosmf.$PROFILE_NAME.user "$ZOWE_USER" --secure --global-config false 2>/dev/null || {
+        # Fallback if secure doesn't work
+        zowe config set profiles.zosmf.$PROFILE_NAME.user "$ZOWE_USER" --global-config false 2>/dev/null || true
+    }
+    
+    # Set password (secure)
+    echo "$ZOWE_PASS" | zowe config set profiles.zosmf.$PROFILE_NAME.password "$ZOWE_PASS" --secure --global-config false 2>/dev/null || {
+        # Fallback if secure doesn't work
+        echo "$ZOWE_PASS" | zowe config set profiles.zosmf.$PROFILE_NAME.password "$ZOWE_PASS" --global-config false 2>/dev/null || true
+    }
+    
+    # Set reject-unauthorized
+    zowe config set profiles.zosmf.$PROFILE_NAME.reject-unauthorized false --global-config false 2>/dev/null || true
+    
+    # Set as default
+    zowe config set defaults.zosmf $PROFILE_NAME --global-config false 2>/dev/null || true
+    
+    echo -e "${GREEN}✓ Profile configuration completed${NC}"
     
     # Wait a moment for file system to sync
     sleep 1
     
-    # Verify profile was actually created
-    if [ ! -d ~/.zowe/profiles/zosmf/default ]; then
-        echo -e "${RED}✗ Profile directory was not created!${NC}"
+    # Verify configuration was saved
+    if [ ! -f "$CONFIG_FILE" ]; then
+        echo -e "${RED}✗ Config file was not created!${NC}"
         echo -e "${YELLOW}Checking if .zowe directory exists...${NC}"
         
         if [ ! -d ~/.zowe ]; then
             echo -e "${RED}✗ .zowe directory does not exist!${NC}"
-            echo -e "${YELLOW}This suggests Zowe CLI profile creation failed completely${NC}"
-            echo -e "${YELLOW}You may need to create the profile manually:${NC}"
-            echo "  ${GREEN}zowe profiles create zosmf-profile default --host 204.90.115.200 --port 10443 --user $ZOWE_USER --password <password> --reject-unauthorized false${NC}"
+            echo -e "${YELLOW}This suggests Zowe CLI configuration failed completely${NC}"
+            echo -e "${YELLOW}You may need to configure manually:${NC}"
+            echo "  ${GREEN}zowe config init${NC}"
+            echo "  ${GREEN}zowe config set profiles.zosmf.default.host 204.90.115.200${NC}"
+            echo "  ${GREEN}zowe config set profiles.zosmf.default.port 10443${NC}"
+            echo "  ${GREEN}zowe config set profiles.zosmf.default.user $ZOWE_USER --secure${NC}"
         else
-            echo -e "${YELLOW}.zowe directory exists but profile directory is missing${NC}"
+            echo -e "${YELLOW}.zowe directory exists but config file is missing${NC}"
         fi
     else
-        echo -e "${GREEN}✓ Profile directory created: ~/.zowe/profiles/zosmf/default${NC}"
+        echo -e "${GREEN}✓ Config file exists: $CONFIG_FILE${NC}"
         
         # Verify port was saved correctly
-        VERIFY_PORT=$(zowe profiles get zosmf-profile default --property port 2>/dev/null || echo "unknown")
+        VERIFY_PORT=$(zowe config get profiles.zosmf.$PROFILE_NAME.port --global-config false 2>/dev/null || echo "unknown")
         if [ "$VERIFY_PORT" != "10443" ]; then
             echo -e "${RED}✗ Port verification failed! Port is: $VERIFY_PORT${NC}"
-            echo -e "${YELLOW}Fixing profile file directly...${NC}"
+            echo -e "${YELLOW}Fixing port in config file...${NC}"
             
-            # Manual fix: Edit profile JSON directly
-            PROFILE_FILE="$HOME/.zowe/profiles/zosmf/default/zowe.config.json"
-            if [ -f "$PROFILE_FILE" ]; then
+            # Manual fix: Edit config JSON directly
+            if [ -f "$CONFIG_FILE" ]; then
                 # Replace port in JSON file
                 if [[ "$OSTYPE" == "darwin"* ]]; then
-                    sed -i '' 's/"port":[[:space:]]*[0-9]*/"port": 10443/g' "$PROFILE_FILE"
-                    sed -i '' 's/"port":[[:space:]]*"[0-9]*"/"port": "10443"/g' "$PROFILE_FILE"
+                    sed -i '' "s/\"port\":[[:space:]]*[0-9]*/\"port\": 10443/g" "$CONFIG_FILE"
+                    sed -i '' "s/\"port\":[[:space:]]*\"[0-9]*\"/\"port\": \"10443\"/g" "$CONFIG_FILE"
                 else
-                    sed -i 's/"port":[[:space:]]*[0-9]*/"port": 10443/g' "$PROFILE_FILE"
-                    sed -i 's/"port":[[:space:]]*"[0-9]*"/"port": "10443"/g' "$PROFILE_FILE"
+                    sed -i "s/\"port\":[[:space:]]*[0-9]*/\"port\": 10443/g" "$CONFIG_FILE"
+                    sed -i "s/\"port\":[[:space:]]*\"[0-9]*\"/\"port\": \"10443\"/g" "$CONFIG_FILE"
                 fi
-                echo -e "${GREEN}✓ Profile file fixed manually${NC}"
+                echo -e "${GREEN}✓ Config file fixed manually${NC}"
                 
                 # Verify again
-                VERIFY_PORT=$(zowe profiles get zosmf-profile default --property port 2>/dev/null || echo "unknown")
+                VERIFY_PORT=$(zowe config get profiles.zosmf.$PROFILE_NAME.port --global-config false 2>/dev/null || echo "unknown")
                 echo "  Port after fix: $VERIFY_PORT"
-            else
-                echo -e "${RED}✗ Profile config file not found: $PROFILE_FILE${NC}"
             fi
         else
             echo -e "${GREEN}✓ Port verified: $VERIFY_PORT${NC}"
         fi
         
-        # Verify profile can be listed
-        if zowe profiles list zosmf-profiles 2>/dev/null | grep -q "default"; then
-            echo -e "${GREEN}✓ Profile is listed in Zowe profiles${NC}"
+        # Verify profile can be read
+        VERIFY_HOST=$(zowe config get profiles.zosmf.$PROFILE_NAME.host --global-config false 2>/dev/null || echo "unknown")
+        if [ "$VERIFY_HOST" != "unknown" ]; then
+            echo -e "${GREEN}✓ Profile configuration is valid${NC}"
+            echo "  Host: $VERIFY_HOST"
+            echo "  Port: $VERIFY_PORT"
         else
-            echo -e "${YELLOW}⚠ Profile directory exists but not listed by Zowe CLI${NC}"
+            echo -e "${YELLOW}⚠ Config file exists but profile may not be configured correctly${NC}"
         fi
     fi
 fi
@@ -309,15 +326,25 @@ fi
 # Test Zowe connection
 echo ""
 echo -e "${GREEN}Testing Zowe CLI connection...${NC}"
-# First check if profile exists
-if [ ! -d ~/.zowe/profiles/zosmf/default ]; then
-    echo -e "${RED}✗ Profile directory does not exist!${NC}"
-    echo -e "${YELLOW}Cannot test connection without a profile.${NC}"
-    echo -e "${YELLOW}Please create the profile manually:${NC}"
+# First check if config exists
+if [ ! -f "$CONFIG_FILE" ]; then
+    echo -e "${RED}✗ Config file does not exist!${NC}"
+    echo -e "${YELLOW}Cannot test connection without configuration.${NC}"
+    echo -e "${YELLOW}Please configure manually:${NC}"
     if [ -n "$ZOWE_USER" ]; then
-        echo "  ${GREEN}zowe profiles create zosmf-profile default --host 204.90.115.200 --port 10443 --user $ZOWE_USER --password <password> --reject-unauthorized false${NC}"
+        echo "  ${GREEN}zowe config init${NC}"
+        echo "  ${GREEN}zowe config set profiles.zosmf.default.host 204.90.115.200${NC}"
+        echo "  ${GREEN}zowe config set profiles.zosmf.default.port 10443${NC}"
+        echo "  ${GREEN}zowe config set profiles.zosmf.default.user $ZOWE_USER --secure${NC}"
+        echo "  ${GREEN}zowe config set profiles.zosmf.default.password <password> --secure${NC}"
+        echo "  ${GREEN}zowe config set defaults.zosmf default${NC}"
     else
-        echo "  ${GREEN}zowe profiles create zosmf-profile default --host 204.90.115.200 --port 10443 --user YOUR_USER --password YOUR_PASS --reject-unauthorized false${NC}"
+        echo "  ${GREEN}zowe config init${NC}"
+        echo "  ${GREEN}zowe config set profiles.zosmf.default.host 204.90.115.200${NC}"
+        echo "  ${GREEN}zowe config set profiles.zosmf.default.port 10443${NC}"
+        echo "  ${GREEN}zowe config set profiles.zosmf.default.user YOUR_USER --secure${NC}"
+        echo "  ${GREEN}zowe config set profiles.zosmf.default.password YOUR_PASS --secure${NC}"
+        echo "  ${GREEN}zowe config set defaults.zosmf default${NC}"
     fi
 else
     # Try with profile first
@@ -335,7 +362,7 @@ else
             echo "  1. Verify host and port: 204.90.115.200:10443"
             echo "  2. Check your credentials (password may have expired)"
             echo "  3. Ensure network connectivity: ping 204.90.115.200"
-            echo "  4. Check profile: zowe profiles get zosmf-profile default"
+            echo "  4. Check config: zowe config get profiles.zosmf.default"
             if [ -n "$ZOWE_USER" ]; then
                 echo "  5. Run manually: zowe zosmf check status --host 204.90.115.200 --port 10443 --user $ZOWE_USER --password <password> --reject-unauthorized false"
             fi
