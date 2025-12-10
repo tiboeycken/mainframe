@@ -222,6 +222,19 @@ else
     echo -e "${YELLOW}  You can test manually: zowe zosmf check status --zosmf-profile zosmf${NC}"
 fi
 
+# Create startup script for systemd
+echo -e "${GREEN}Creating startup script...${NC}"
+cat > "$OPSDASH_DIR/start_opsdash.sh" <<SCRIPTEOF
+#!/bin/bash
+export \$(dbus-launch)
+gnome-keyring-daemon -r --unlock --components=secrets &
+sleep 2
+cd $OPSDASH_DIR
+source venv/bin/activate
+exec streamlit run opsdash_web.py --server.address=$STREAMLIT_ADDRESS --server.port=$STREAMLIT_PORT --server.headless=true
+SCRIPTEOF
+chmod +x "$OPSDASH_DIR/start_opsdash.sh"
+
 # Create systemd service for auto-start
 echo ""
 echo -e "${GREEN}Creating systemd service for auto-start...${NC}"
@@ -237,7 +250,7 @@ WorkingDirectory=$OPSDASH_DIR
 Environment="PATH=$OPSDASH_DIR/venv/bin:/usr/local/bin:/usr/bin:/bin"
 Environment="NODE_TLS_REJECT_UNAUTHORIZED=0"
 Environment="DISPLAY=:0"
-ExecStart=/bin/bash -c 'export $(dbus-launch) && gnome-keyring-daemon -r --unlock --components=secrets & sleep 2 && $OPSDASH_DIR/venv/bin/streamlit run opsdash_web.py --server.address=$STREAMLIT_ADDRESS --server.port=$STREAMLIT_PORT --server.headless=true'
+ExecStart=$OPSDASH_DIR/start_opsdash.sh
 Restart=always
 RestartSec=10
 
